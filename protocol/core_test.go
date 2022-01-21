@@ -27,9 +27,16 @@ func TestRecv(t *testing.T) {
 		t.Fail()
 	}
 }
+
 func TestSend(t *testing.T) {
 	var ok bool
 	m, _ := NewSendProtocol("A", 3)
+	if ok = m.Emit("START"); !ok {
+		t.Fail()
+	}
+	if m.State != "OPEN.A." {
+		t.Fail()
+	}
 	if ok = m.Emit("OPENED.A."); !ok {
 		t.Fail()
 	}
