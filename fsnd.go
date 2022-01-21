@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"regexp"
+	"time"
 )
 
 // session 을 만들것
@@ -16,6 +17,8 @@ var tmpDir = "./out"
 var jobQueueBase = "./queue"
 var recvSess = make(map[string]*RecvSession)
 var sendSess = make(map[string]*SendSession)
+
+const TTL = 30
 
 func main() {
 	defer func() {
@@ -33,9 +36,31 @@ func main() {
 	//cancel, cancelFunc := context.WithCancel(ctx)
 	prtCh := make(chan string)
 
+	ticker := time.Tick(1 * time.Second)
+
 LoopMain:
 	for {
 		select {
+		case now := <-ticker:
+			//log.Println("tick")
+			for k, s := range recvSess {
+				if s.IsTimeout(now, TTL){
+					log.Printf("RecvSession %s is timeout", s.SessionKey())
+					failMsg := s.NewFsndMsg("TIMEOUT")
+					delete(recvSess, k)
+					log.Println(failMsg)
+					go func() { prtCh <- failMsg.Encode() }()
+				}
+			}
+			for k, s := range sendSess {
+				if s.IsTimeout(now, TTL){
+					log.Printf("SendSession %s is timeout", s.SessionKey())
+					failMsg := s.NewFsndMsg("TIMEOUT")
+					delete(sendSess, k)
+					log.Println(failMsg)
+					go func() { prtCh <- failMsg.Encode() }()
+				}
+			}
 		case output, ok := <-prtCh:
 			if ok == false {
 				return
@@ -63,9 +88,9 @@ LoopMain:
 				continue
 			}
 			sendSess[sess.SessionKey()] = sess
-			sendMsg, doNext, err := sess.Handle(nil)
+			sendMsg, err := sess.Handle(sess.NewFsndMsg("START"))
 
-			if !doNext {
+			if err != nil {
 				if err != io.EOF {
 					log.Print(err)
 					sess.Job.MoveJob(jobqueue.StateFailed)
@@ -74,8 +99,8 @@ LoopMain:
 					sess.Job.MoveJob(jobqueue.StateDone)
 				}
 				delete(sendSess, sess.SessionKey())
-
 			}
+
 			if sendMsg != nil {
 				log.Println(sendMsg)
 				go func() { prtCh <- sendMsg.Encode() }()
@@ -97,22 +122,33 @@ LoopMain:
 				continue
 			}
 
-			if msg.Command == CmdAck || msg.Command == CmdOk {
+			if msg.SrcType == "RECV"{
 				var sess *SendSession
 				sess, ok = sendSess[v0.Addr+msg.SessionId]
 
 				if !ok { // 없으면 무시
 					log.Printf("No session %s %s", v0.Addr+msg.SessionId, err)
+					failMsg := FsndMsg{
+						MsgV0:     RpipeMsgV0{
+							Addr:    v0.Addr,
+						},
+						SessionId: msg.SessionId,
+						Event:     "NO_SESSION_FAIL",
+					}
+					go func() { prtCh <- failMsg.Encode() }()
 					continue
 				}
 
-				sendMsg, doNext, err := sess.Handle(msg)
+				sendMsg, err := sess.Handle(msg)
 				if err != nil {
 					log.Println(err)
-				}
-				if doNext == false {
-					log.Printf("%s Done", sess.SessionKey())
-					_, _ = sess.Job.MoveJob(jobqueue.StateDone)
+
+					if err == LastError {
+						sess.Job.MoveJob(jobqueue.StateDone)
+						log.Printf("%s Done", sess.SessionKey())
+					} else {
+						sess.Job.MoveJob(jobqueue.StateFailed)
+					}
 					delete(sendSess, sess.SessionKey())
 				}
 				if sendMsg != nil {
@@ -133,16 +169,17 @@ LoopMain:
 					recvSess[sess.SessionKey()] = sess
 				}
 
-				newAck, doNext, err := sess.Handle(msg)
+				newAck, err := sess.Handle(msg)
 
 				if err != nil {
 					log.Print(err)
-				}
-				if doNext == false {
 					delete(recvSess, sess.SessionKey())
-					log.Printf("%s Done", sess.SessionKey())
-				}
-				if newAck != nil {
+
+					if err == LastError {
+						log.Printf("%s Done", sess.SessionKey())
+					}
+
+				} else if newAck != nil {
 					log.Println(newAck)
 					go func() { prtCh <- newAck.Encode() }()
 				}

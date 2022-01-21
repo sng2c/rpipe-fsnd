@@ -5,29 +5,38 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"fsnd/fsm"
 	"fsnd/jobqueue"
+	"fsnd/protocol"
 	"github.com/dyninc/qstring"
 	"hash"
 	"io"
 	"log"
+	"math"
 	"net/url"
 	"os"
 	"path"
 	"strings"
+	"time"
 )
 
 type SendSession struct {
-	LastSeq   int
-	FileObj   *os.File
-	FileHash  string
-	FilePath  string
-	HashObj   hash.Hash
-	Job       jobqueue.Job
-	SessionId string
-	Origin    string
-	RecvAddr  string `qstring:"addr,omitempty"`
-	FileName  string `qstring:"file,omitempty"`
+	SendProto   fsm.Instance
+	LastState   fsm.State
+	LastSent    time.Time
+	FileObj     *os.File
+	FileHash    string
+	FilePath    string
+	ChunkLength int
+	HashObj     hash.Hash
+	Job         jobqueue.Job
+	SessionId   string
+	Origin      string
+	RecvAddr    string `qstring:"addr,omitempty"`
+	FileName    string `qstring:"file,omitempty"`
 }
+
+const BUFSIZE = 4096
 
 func NewSendSessionFrom(job jobqueue.Job) (*SendSession, error) {
 	str := strings.TrimSpace(job.Payload)
@@ -37,6 +46,7 @@ func NewSendSessionFrom(job jobqueue.Job) (*SendSession, error) {
 	}
 	sess := SendSession{}
 	sess.Job = job
+
 	err = qstring.Unmarshal(values, &sess)
 	if err != nil {
 		return nil, err
@@ -45,13 +55,30 @@ func NewSendSessionFrom(job jobqueue.Job) (*SendSession, error) {
 	if sess.RecvAddr == "" || sess.FileName == "" {
 		return nil, errors.New("Invalid payload " + str)
 	}
-
+	sess.LastSent = time.Now()
 	sess.Origin = str
 	sess.SessionId = job.JobName
 	sess.FilePath = path.Join(job.Path(), sess.FileName)
+
+	fi, err := os.Stat(sess.FilePath)
+	if err != nil {
+		return nil, err
+	}
+	// get the size
+	size := fi.Size()
+	chunkLength := math.Ceil(float64(size) / float64(BUFSIZE))
+	proto, lastState := protocol.NewSendProtocol(sess.SessionId, int(chunkLength))
+	sess.SendProto = proto
+	sess.LastState = lastState
+	sess.ChunkLength = int(chunkLength)
+
+	sess.SendProto.Fsm.LogDump()
 	return &sess, nil
 }
-
+func (sess *SendSession) IsTimeout(now time.Time, ttl float64) bool {
+	delta := now.Sub(sess.LastSent)
+	return delta.Seconds() > ttl
+}
 func readFileHash(path string) string {
 	h := md5.New()
 	file, err := os.ReadFile(path)
@@ -65,85 +92,57 @@ func readFileHash(path string) string {
 func (sess *SendSession) SessionKey() string {
 	return sess.RecvAddr + sess.SessionId
 }
-
+func (sess *SendSession) NewFsndMsg(event fsm.Event) *FsndMsg {
+	sess.LastSent = time.Now()
+	return &FsndMsg{
+		MsgV0: RpipeMsgV0{
+			Addr: sess.RecvAddr,
+		},
+		SrcType:   "SEND",
+		SessionId: sess.SessionId,
+		Event:     event,
+		Length: sess.ChunkLength,
+	}
+}
 func (sess *SendSession) Handle(ackMsg *FsndMsg) (
 	newMsg *FsndMsg,
-	doMore bool,
 	err error,
 ) {
+	log.Println(sess)
 	log.Printf("SendSession %s to %s with %s", sess.FileName, sess.RecvAddr, sess.SessionId)
-	doMore = true
-	if ackMsg != nil && ackMsg.Seq != sess.LastSeq {
-		doMore = false
-		err = errors.New("Invalid Seq")
-		newMsg = &FsndMsg{
-			MsgV0: RpipeMsgV0{
-				Addr: sess.RecvAddr,
-			},
-			SessionId: sess.SessionId,
-			Command:   CmdFail,
-			Seq:       sess.LastSeq + 1,
+	if ok := sess.SendProto.Emit(ackMsg.Event); ok {
+
+		if sess.SendProto.State == sess.LastState {
+			err = LastError
 		}
-		return
-	}
 
-	sess.LastSeq += 1
+		newMsg = sess.NewFsndMsg(fsm.Event(sess.SendProto.State))
 
-	if ackMsg != nil && ackMsg.Command == CmdOk {
-		return nil, false, nil
-	} else {
-		if sess.FileObj == nil {
+		cmd, _, page := protocol.ParseEventState(string(sess.SendProto.State))
+		if cmd == "OPEN" {
 			sess.FileObj, err = os.Open(sess.FilePath)
 			sess.FileHash = readFileHash(sess.FilePath)
-			if err != nil {
-				return nil, false, err
-			}
-			newMsg = &FsndMsg{
-				MsgV0: RpipeMsgV0{
-					Addr: sess.RecvAddr,
-				},
-				SessionId: sess.SessionId,
-				Command:   CmdFileOpen,
-				Hash:      sess.FileHash,
-				FileName:  sess.FileName,
-				Seq:       sess.LastSeq,
-			}
+			newMsg.Hash = sess.FileHash
+			newMsg.FileName = sess.FileName
 
-			return
-		} else {
-			bufSize := 4096
-			buf := make([]byte, bufSize)
+		} else if cmd == "WRITE" {
+			buf := make([]byte, BUFSIZE)
+			offset := int64(page * BUFSIZE)
+			log.Printf("page %d, OFFSET %d ", page, offset)
+			sess.FileObj.Seek(offset, io.SeekStart)
+
 			var hasRead int
-			hasRead, err = sess.FileObj.Read(buf)
+			hasRead, _ = sess.FileObj.Read(buf)
 			buf = buf[:hasRead]
-			if err != nil {
-				if err == io.EOF {
-					doMore = true
-					newMsg = &FsndMsg{
-						MsgV0: RpipeMsgV0{
-							Addr: sess.RecvAddr,
-						},
-						SessionId: sess.SessionId,
-						Command:   CmdFileClose,
-						Seq:       sess.LastSeq,
-					}
-					return
-				} else {
-					doMore = false
-				}
-				return
-			}
-			newMsg = &FsndMsg{
-				MsgV0: RpipeMsgV0{
-					Addr: sess.RecvAddr,
-				},
-				SessionId: sess.SessionId,
-				Command:   CmdFileWrite,
-				DataB64:   base64.StdEncoding.EncodeToString(buf),
-				Seq:       sess.LastSeq,
-			}
-			return
+			newMsg.Event = fsm.Event(sess.SendProto.State)
+			newMsg.DataB64 = base64.StdEncoding.EncodeToString(buf)
+		} else if cmd == "CLOSE" {
+			sess.FileObj.Close()
 		}
+	} else {
+		newMsg = sess.NewFsndMsg("STATE_FAIL")
+		err = LastError
 	}
 
+	return
 }

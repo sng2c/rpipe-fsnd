@@ -5,14 +5,18 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"fsnd/fsm"
+	"fsnd/protocol"
 	"hash"
 	"log"
 	"os"
 	"path"
+	"time"
 )
 
 type RecvSession struct {
-	LastSeq    int
+	RecvProto  fsm.Instance
+	LastSent   time.Time
 	FileObj    *os.File
 	TargetBase string
 	HashObj    hash.Hash
@@ -20,14 +24,15 @@ type RecvSession struct {
 	SenderAddr string
 	FileName   string
 	Hash       string
+	LastState  fsm.State
 }
 
 func NewRecvSessionFrom(msg FsndMsg, targetBase string) (*RecvSession, error) {
-	if msg.Command != CmdFileOpen {
-		return nil, errors.New("Command is not CmdFileOpen")
-	}
+	proto, lastState := protocol.NewRecvProtocol(msg.SessionId, msg.Length)
 	sess := RecvSession{
-		LastSeq:    0,
+		RecvProto:  proto,
+		LastState:  lastState,
+		LastSent:   time.Now(),
 		FileObj:    nil,
 		TargetBase: targetBase,
 		HashObj:    md5.New(),
@@ -36,7 +41,24 @@ func NewRecvSessionFrom(msg FsndMsg, targetBase string) (*RecvSession, error) {
 		FileName:   msg.FileName,
 		Hash:       msg.Hash,
 	}
+	proto.Fsm.LogDump()
 	return &sess, nil
+}
+func (sess *RecvSession) NewFsndMsg(event fsm.Event) *FsndMsg {
+	sess.LastSent = time.Now()
+	newMsg := &FsndMsg{
+		MsgV0: RpipeMsgV0{
+			Addr: sess.SenderAddr,
+		},
+		SrcType:   "RECV",
+		SessionId: sess.SessionId,
+		Event:     event,
+	}
+	return newMsg
+}
+func (sess *RecvSession) IsTimeout(now time.Time, ttl float64) bool {
+	delta := now.Sub(sess.LastSent)
+	return delta.Seconds() > ttl
 }
 func (sess *RecvSession) SessionKey() string {
 	return sess.SenderAddr + sess.SessionId
@@ -50,65 +72,62 @@ func (sess *RecvSession) FilePath() string {
 func (sess *RecvSession) JobPath() string {
 	return path.Join(sess.SessionPath(), "job.txt")
 }
-func (sess *RecvSession) Handle(msg *FsndMsg) (*FsndMsg, bool, error) {
-	var err error
-	if msg.Command != CmdFileOpen && sess.LastSeq >= msg.Seq {
-		err := errors.New(fmt.Sprintf("Seq is invalid (lastSeq %d >= msg.Seq %d)", sess.LastSeq, msg.Seq))
-		log.Print(err)
-		return nil, false, err
+func (sess *RecvSession) Handle(msg *FsndMsg) (newMsg *FsndMsg, _err error) {
+	{
+		err := os.MkdirAll(sess.SessionPath(), 0755)
+		if err != nil {
+			_err = err
+			log.Println(err)
+			newMsg = sess.NewFsndMsg("MKDIR_FAIL")
+		}
+	}
+	if ok := sess.RecvProto.Emit(msg.Event); ok {
+
+		if sess.RecvProto.State == sess.LastState {
+			_err = LastError
+		}
+
+		cmd, _, _ := protocol.ParseEventState(string(sess.RecvProto.State))
+		if cmd == "OPENED" {
+			err := os.WriteFile(sess.JobPath(), []byte(msg.Origin), 0600)
+			if err != nil {
+				_err = err
+				log.Println(err)
+			}
+			sess.FileObj, _ = os.Create(sess.FilePath())
+		} else if cmd == "WRITTEN" {
+			decoded, err := base64.StdEncoding.DecodeString(msg.DataB64)
+			if err != nil {
+				_err = err
+				log.Println(err)
+			}
+			sess.HashObj.Write(decoded)
+			written, _ := sess.FileObj.Write(decoded)
+			log.Printf("Written %d", written)
+		} else if cmd == "CLOSED" {
+			err := sess.FileObj.Close()
+			if err != nil {
+				_err = err
+				log.Println(err)
+			}
+			hstr := fmt.Sprintf("%x", sess.HashObj.Sum(nil))
+			if hstr != sess.Hash {
+				_err = errors.New(fmt.Sprintf("Hash is not match %s != %s", sess.Hash, hstr))
+				log.Println(_err)
+				os.Remove(sess.FilePath())
+			}
+			log.Println("Done")
+
+		}
+		if _err != nil {
+			newMsg = sess.NewFsndMsg(fsm.Event(_err.Error()))
+		} else {
+			newMsg = sess.NewFsndMsg(fsm.Event(sess.RecvProto.State))
+		}
 	} else {
-		sess.LastSeq = msg.Seq
+		newMsg = sess.NewFsndMsg("STATE_FAIL")
+		_err = LastError
 	}
 
-	err = os.MkdirAll(sess.SessionPath(), 0755)
-	if err != nil {
-		log.Println(err)
-		return nil, false, err
-	}
-	switch msg.Command {
-	case CmdFileOpen:
-		err = os.WriteFile(sess.JobPath(), []byte(msg.Origin), 0600)
-		if err != nil {
-			log.Println(err)
-			return nil, false, err
-		}
-		sess.FileObj, err = os.Create(sess.FilePath())
-		if err != nil {
-			log.Println(err)
-			return nil, false, err
-		}
-	case CmdFileWrite:
-		decoded, err := base64.StdEncoding.DecodeString(msg.DataB64)
-		if err != nil {
-			log.Println(err)
-			return nil, false, err
-		}
-		sess.HashObj.Write(decoded)
-		written, err := sess.FileObj.Write(decoded)
-		if err != nil {
-			log.Println(err)
-			return nil, false, err
-		}
-		log.Printf("Written %d", written)
-	case CmdFileClose:
-		err = sess.FileObj.Close()
-		if err != nil {
-			log.Println(err)
-			return nil, false, err
-		}
-		hstr := fmt.Sprintf("%x", sess.HashObj.Sum(nil))
-		if hstr != sess.Hash {
-			err := errors.New(fmt.Sprintf("Hash is not match %s != %s", sess.Hash, hstr))
-			log.Println(err)
-			err = os.Remove(sess.FilePath())
-			if err != nil {
-				log.Println(err)
-				return nil, false, err
-			}
-			return nil, false, err
-		}
-		log.Println("Done")
-		return msg.NewOk(), false, nil
-	}
-	return msg.NewAck(), true, nil
+	return
 }
