@@ -6,40 +6,41 @@ import (
 	"errors"
 	"fmt"
 	"fsnd/fsm"
+	"fsnd/messages"
 	"fsnd/protocol"
+	log "github.com/sirupsen/logrus"
 	"hash"
-	"log"
 	"os"
 	"path"
 	"time"
 )
 
 type RecvSession struct {
-	RecvProto  fsm.Instance
-	LastSent   time.Time
-	FileObj    *os.File
-	TargetBase string
-	HashObj    hash.Hash
-	SessionId  string
-	SenderAddr string
-	FileName   string
-	Hash       string
-	LastState  fsm.State
+	RecvProto    fsm.Instance
+	LastSent     time.Time
+	FileObj      *os.File
+	DownloadPath string
+	HashObj      hash.Hash
+	SessionId    string
+	SenderAddr   string
+	FileName     string
+	Hash         string
+	LastState    fsm.State
 }
 
-func NewRecvSessionFrom(msg FsndMsg, targetBase string) (*RecvSession, error) {
+func NewRecvSessionFrom(msg FsndMsg, downloadPath string) (*RecvSession, error) {
 	proto, lastState := protocol.NewRecvProtocol(msg.SessionId, msg.Length)
 	sess := RecvSession{
-		RecvProto:  proto,
-		LastState:  lastState,
-		LastSent:   time.Now(),
-		FileObj:    nil,
-		TargetBase: targetBase,
-		HashObj:    md5.New(),
-		SessionId:  msg.SessionId,
-		SenderAddr: msg.MsgV0.Addr,
-		FileName:   msg.FileName,
-		Hash:       msg.Hash,
+		RecvProto:    proto,
+		LastState:    lastState,
+		LastSent:     time.Now(),
+		FileObj:      nil,
+		DownloadPath: downloadPath,
+		HashObj:      md5.New(),
+		SessionId:    msg.SessionId,
+		SenderAddr:   msg.MsgV0.From,
+		FileName:     msg.FileName,
+		Hash:         msg.Hash,
 	}
 	proto.Fsm.LogDump()
 	return &sess, nil
@@ -47,8 +48,8 @@ func NewRecvSessionFrom(msg FsndMsg, targetBase string) (*RecvSession, error) {
 func (sess *RecvSession) NewFsndMsg(event fsm.Event) *FsndMsg {
 	sess.LastSent = time.Now()
 	newMsg := &FsndMsg{
-		MsgV0: RpipeMsgV0{
-			Addr: sess.SenderAddr,
+		MsgV0: &messages.Msg{
+			To: sess.SenderAddr,
 		},
 		SrcType:   "RECV",
 		SessionId: sess.SessionId,
@@ -64,7 +65,7 @@ func (sess *RecvSession) SessionKey() string {
 	return sess.SenderAddr + sess.SessionId
 }
 func (sess *RecvSession) SessionPath() string {
-	return path.Join(targetDir, sess.SessionId)
+	return path.Join(sess.DownloadPath, sess.SessionId)
 }
 func (sess *RecvSession) FilePath() string {
 	return path.Join(sess.SessionPath(), sess.FileName)
@@ -74,10 +75,11 @@ func (sess *RecvSession) JobPath() string {
 }
 func (sess *RecvSession) Handle(msg *FsndMsg) (newMsg *FsndMsg, _err error) {
 	{
+		log.Debugf("Mkdir Session %s", sess.SessionPath())
 		err := os.MkdirAll(sess.SessionPath(), 0755)
 		if err != nil {
 			_err = err
-			log.Println(err)
+			log.Warningln(err)
 			newMsg = sess.NewFsndMsg("MKDIR_FAIL")
 		}
 	}
@@ -89,34 +91,38 @@ func (sess *RecvSession) Handle(msg *FsndMsg) (newMsg *FsndMsg, _err error) {
 
 		cmd, _, _ := protocol.ParseEventState(string(sess.RecvProto.State))
 		if cmd == "OPENED" {
+			log.Debugf("Write JOB %s", sess.JobPath())
 			err := os.WriteFile(sess.JobPath(), []byte(msg.Origin), 0600)
 			if err != nil {
 				_err = err
-				log.Println(err)
+				log.Warningln(err)
 			}
+			log.Debugf("Open JOB %s", sess.FilePath())
 			sess.FileObj, _ = os.Create(sess.FilePath())
 		} else if cmd == "WRITTEN" {
+			log.Debugf("Write File %s" +
+				"", msg.DataB64)
 			decoded, err := base64.StdEncoding.DecodeString(msg.DataB64)
 			if err != nil {
 				_err = err
-				log.Println(err)
+				log.Warningln(err)
 			}
 			sess.HashObj.Write(decoded)
 			written, _ := sess.FileObj.Write(decoded)
-			log.Printf("Written %d", written)
+			log.Debugf("Written %d", written)
 		} else if cmd == "CLOSED" {
 			err := sess.FileObj.Close()
 			if err != nil {
 				_err = err
-				log.Println(err)
+				log.Debugln(err)
 			}
 			hstr := fmt.Sprintf("%x", sess.HashObj.Sum(nil))
 			if hstr != sess.Hash {
 				_err = errors.New(fmt.Sprintf("Hash is not match %s != %s", sess.Hash, hstr))
-				log.Println(_err)
+				log.Debugln(_err)
 				os.Remove(sess.FilePath())
 			}
-			log.Println("Done")
+			log.Debugln("Done")
 
 		}
 		if _err != nil {

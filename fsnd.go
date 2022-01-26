@@ -1,20 +1,20 @@
 package main
 
 import (
+	"flag"
 	"fsnd/jobqueue"
+	"fsnd/messages"
+	easy "github.com/t-tomalak/logrus-easy-formatter"
 	"io"
-	"log"
 	"os"
-	"regexp"
 	"time"
 )
-
+import (
+	log "github.com/sirupsen/logrus"
+)
 // session 을 만들것
+const VERSION = "0.1"
 
-var ver0MsgPat = regexp.MustCompile(`^([a-zA-Z0-9\\._-]+):(.+)$`)
-var targetDir = "./out"
-var tmpDir = "./out"
-var jobQueueBase = "./queue"
 var recvSess = make(map[string]*RecvSession)
 var sendSess = make(map[string]*SendSession)
 
@@ -22,14 +22,39 @@ const TTL = 30
 
 func main() {
 	defer func() {
-		log.Println("Bye")
+		log.Debugln("Bye")
 	}()
 
-	jobCh, err := jobqueue.StartJobQueue(jobQueueBase)
+	var verbose bool
+
+	var downloadPath string
+	var uploadPath string
+
+	flag.BoolVar(&verbose, "verbose", false, "Verbose")
+	flag.StringVar(&downloadPath, "download", "./download", "Download directory")
+	flag.StringVar(&uploadPath, "upload", "./upload", "Upload directory")
+	flag.Parse()
+
+	if verbose {
+		log.SetLevel(log.DebugLevel)
+	} else {
+		log.SetLevel(log.InfoLevel)
+	}
+
+	log.SetFormatter(&easy.Formatter{
+		LogFormat: "%msg%",
+	})
+	log.Printf("Fsnd V%s\n", VERSION)
+	log.Printf("  download  : %s\n", downloadPath)
+	log.Printf("  upload    : %s\n", uploadPath)
+	log.Printf("  verbose   : %t\n", verbose)
+	log.SetFormatter(&log.JSONFormatter{})
+
+	jobCh, err := jobqueue.StartJobQueue(uploadPath)
 	if err != nil {
 		return
 	}
-	log.Println("WATCHER")
+	log.Debugln("WATCHER")
 
 	// RECEIVER
 	stdin := RecvChannel(os.Stdin)
@@ -42,22 +67,22 @@ LoopMain:
 	for {
 		select {
 		case now := <-ticker:
-			//log.Println("tick")
+			//log.Debugln("tick")
 			for k, s := range recvSess {
-				if s.IsTimeout(now, TTL){
-					log.Printf("RecvSession %s is timeout", s.SessionKey())
+				if s.IsTimeout(now, TTL) {
+					log.Debugf("RecvSession %s is timeout", s.SessionKey())
 					failMsg := s.NewFsndMsg("TIMEOUT")
 					delete(recvSess, k)
-					log.Println(failMsg)
+					log.Debugln(failMsg)
 					go func() { prtCh <- failMsg.Encode() }()
 				}
 			}
 			for k, s := range sendSess {
-				if s.IsTimeout(now, TTL){
-					log.Printf("SendSession %s is timeout", s.SessionKey())
+				if s.IsTimeout(now, TTL) {
+					log.Debugf("SendSession %s is timeout", s.SessionKey())
 					failMsg := s.NewFsndMsg("TIMEOUT")
 					delete(sendSess, k)
-					log.Println(failMsg)
+					log.Debugln(failMsg)
 					go func() { prtCh <- failMsg.Encode() }()
 				}
 			}
@@ -70,20 +95,20 @@ LoopMain:
 			if ok == false {
 				break LoopMain
 			}
-			log.Println(job)
+			log.Debugln(job)
 			job, err := job.MoveJob(jobqueue.StateDoing)
 			if err != nil {
-				log.Print(err)
+				log.Debug(err)
 				continue
 			}
-			log.Println(job)
+			log.Debugln(job)
 			// process here
 			sess, err := NewSendSessionFrom(job)
 			if err != nil {
-				log.Print(err)
+				log.Debug(err)
 				_, err := job.MoveJob(jobqueue.StateFailed)
 				if err != nil {
-					log.Print(err)
+					log.Debug(err)
 				}
 				continue
 			}
@@ -92,17 +117,17 @@ LoopMain:
 
 			if err != nil {
 				if err != io.EOF {
-					log.Print(err)
+					log.Debug(err)
 					sess.Job.MoveJob(jobqueue.StateFailed)
 				} else {
-					log.Printf("%s Done", sess.SessionKey())
+					log.Debugf("%s Done", sess.SessionKey())
 					sess.Job.MoveJob(jobqueue.StateDone)
 				}
 				delete(sendSess, sess.SessionKey())
 			}
 
 			if sendMsg != nil {
-				log.Println(sendMsg)
+				log.Debugln(sendMsg)
 				go func() { prtCh <- sendMsg.Encode() }()
 			}
 
@@ -110,27 +135,24 @@ LoopMain:
 			if ok == false {
 				break LoopMain
 			}
-			log.Printf("[STDIN] %s", line)
-			v0, err := ParseRpipeMsgV0(line)
-			if err != nil {
-				log.Println(err)
-				continue
-			}
+			log.Debugf("[STDIN] %s", line)
+			v0, err := messages.NewMsgFromString(line)
+
 			msg, err := NewFsndMsgFrom(v0)
 			if err != nil {
-				log.Println(err)
+				log.Debugln(err)
 				continue
 			}
 
-			if msg.SrcType == "RECV"{
+			if msg.SrcType == "RECV" {
 				var sess *SendSession
-				sess, ok = sendSess[v0.Addr+msg.SessionId]
+				sess, ok = sendSess[v0.From+msg.SessionId]
 
 				if !ok { // 없으면 무시
-					log.Printf("No session %s %s", v0.Addr+msg.SessionId, err)
+					log.Debugf("No session %s %s", v0.From+msg.SessionId, err)
 					failMsg := FsndMsg{
-						MsgV0:     RpipeMsgV0{
-							Addr:    v0.Addr,
+						MsgV0: &messages.Msg{
+							To: v0.From,
 						},
 						SessionId: msg.SessionId,
 						Event:     "NO_SESSION_FAIL",
@@ -141,46 +163,46 @@ LoopMain:
 
 				sendMsg, err := sess.Handle(msg)
 				if err != nil {
-					log.Println(err)
+					log.Debugln(err)
 
 					if err == LastError {
 						sess.Job.MoveJob(jobqueue.StateDone)
-						log.Printf("%s Done", sess.SessionKey())
+						log.Debugf("%s Done", sess.SessionKey())
 					} else {
 						sess.Job.MoveJob(jobqueue.StateFailed)
 					}
 					delete(sendSess, sess.SessionKey())
 				}
 				if sendMsg != nil {
-					log.Println(sendMsg)
+					log.Debugln(sendMsg)
 					go func() { prtCh <- sendMsg.Encode() }()
 				}
 			} else {
 				var sess *RecvSession
-				sess, ok = recvSess[v0.Addr+msg.SessionId]
+				sess, ok = recvSess[v0.From+msg.SessionId]
 
 				if !ok {
-					sess, err = NewRecvSessionFrom(*msg, targetDir)
+					sess, err = NewRecvSessionFrom(*msg, downloadPath)
 					if err != nil {
-						log.Print(err)
+						log.Debug(err)
 						continue
 					}
-					log.Printf("New Recv Session %s", sess.SessionKey())
+					log.Debugf("New Recv Session %s", sess.SessionKey())
 					recvSess[sess.SessionKey()] = sess
 				}
 
 				newAck, err := sess.Handle(msg)
 
 				if err != nil {
-					log.Print(err)
+					log.Debug(err)
 					delete(recvSess, sess.SessionKey())
 
 					if err == LastError {
-						log.Printf("%s Done", sess.SessionKey())
+						log.Debugf("%s Done", sess.SessionKey())
 					}
 
 				} else if newAck != nil {
-					log.Println(newAck)
+					log.Debugln(newAck)
 					go func() { prtCh <- newAck.Encode() }()
 				}
 			}

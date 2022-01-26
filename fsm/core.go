@@ -1,7 +1,7 @@
 package fsm
 
 import (
-	"log"
+	log "github.com/sirupsen/logrus"
 	"sync"
 )
 
@@ -27,9 +27,9 @@ func (m Fsm) Append(state0 State, event Event, state1 State) {
 }
 func (m Fsm) LogDump() {
 	for k, v := range m {
-		log.Println(k)
+		log.Debugln(k)
 		for kk, vv := range v {
-			log.Println("\t", kk, vv)
+			log.Debugln("\t", kk, vv)
 		}
 	}
 }

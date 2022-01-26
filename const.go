@@ -2,39 +2,18 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"fsnd/fsm"
+	"fsnd/messages"
 	"github.com/dyninc/qstring"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"net/url"
 	"strings"
 )
 
-// TODO rpipe 프로젝트에 모듈로 import 할 수 있게 넣을 것
-type RpipeMsgV0 struct {
-	Addr    string `qstring:"-"`
-	Payload string `qstring:"-"`
-}
-
 var LastError error = errors.New("Last Error")
 
-func (v0 RpipeMsgV0) Encode() string {
-	return fmt.Sprintf("%s:%s", v0.Addr, v0.Payload)
-}
-func ParseRpipeMsgV0(str string) (RpipeMsgV0, error) {
-	matched := ver0MsgPat.FindStringSubmatch(str)
-	if len(matched) != 3 {
-		err := errors.New("Invalid format " + str)
-		return RpipeMsgV0{}, err
-	}
-	return RpipeMsgV0{
-		Addr:    matched[1],
-		Payload: matched[2],
-	}, nil
-}
-
 type FsndMsg struct {
-	MsgV0     RpipeMsgV0
+	MsgV0     *messages.Msg `qstring:"-"`
 	SrcType   string    `qstring:"type"`
 	SessionId string    `qstring:"sid,omitempty"`
 	Event     fsm.Event `qstring:"cmd,omitempty"`
@@ -45,8 +24,8 @@ type FsndMsg struct {
 	Origin    string    `qstring:"-"`
 }
 
-func NewFsndMsgFrom(v0 RpipeMsgV0) (*FsndMsg, error) {
-	str := strings.TrimSpace(v0.Payload)
+func NewFsndMsgFrom(v0 *messages.Msg) (*FsndMsg, error) {
+	str := strings.TrimSpace(v0.Data)
 	values, err := url.ParseQuery(str)
 	if err != nil {
 		return nil, err
@@ -67,14 +46,14 @@ func (msg *FsndMsg) Encode() string {
 	if err != nil {
 		return ""
 	}
-	msg.MsgV0.Payload = marshalString
-	return msg.MsgV0.Encode()
+	msg.MsgV0.Data = marshalString
+	return msg.MsgV0.Marshal()
 }
 
 func (msg *FsndMsg) NewAck(event fsm.Event) *FsndMsg {
-	log.Println(msg.MsgV0.Addr)
+	log.Debugln(msg.MsgV0.From)
 	return &FsndMsg{
-		MsgV0:     RpipeMsgV0{Addr: msg.MsgV0.Addr},
+		MsgV0:     &messages.Msg{To: msg.MsgV0.From},
 		SessionId: msg.SessionId,
 		Event:     event,
 	}

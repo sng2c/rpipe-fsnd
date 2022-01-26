@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"fsnd/fsm"
 	"fsnd/jobqueue"
+	"fsnd/messages"
 	"fsnd/protocol"
 	"github.com/dyninc/qstring"
+	log "github.com/sirupsen/logrus"
 	"hash"
 	"io"
-	"log"
 	"math"
 	"net/url"
 	"os"
@@ -95,8 +96,8 @@ func (sess *SendSession) SessionKey() string {
 func (sess *SendSession) NewFsndMsg(event fsm.Event) *FsndMsg {
 	sess.LastSent = time.Now()
 	return &FsndMsg{
-		MsgV0: RpipeMsgV0{
-			Addr: sess.RecvAddr,
+		MsgV0: &messages.Msg{
+			To: sess.RecvAddr,
 		},
 		SrcType:   "SEND",
 		SessionId: sess.SessionId,
@@ -108,8 +109,8 @@ func (sess *SendSession) Handle(ackMsg *FsndMsg) (
 	newMsg *FsndMsg,
 	err error,
 ) {
-	log.Println(sess)
-	log.Printf("SendSession %s to %s with %s", sess.FileName, sess.RecvAddr, sess.SessionId)
+	log.Debugln(sess)
+	log.Debugf("SendSession %s to %s with %s", sess.FileName, sess.RecvAddr, sess.SessionId)
 	if ok := sess.SendProto.Emit(ackMsg.Event); ok {
 
 		if sess.SendProto.State == sess.LastState {
@@ -128,7 +129,7 @@ func (sess *SendSession) Handle(ackMsg *FsndMsg) (
 		} else if cmd == "WRITE" {
 			buf := make([]byte, BUFSIZE)
 			offset := int64(page * BUFSIZE)
-			log.Printf("page %d, OFFSET %d ", page, offset)
+			log.Debugf("page %d, OFFSET %d ", page, offset)
 			sess.FileObj.Seek(offset, io.SeekStart)
 
 			var hasRead int

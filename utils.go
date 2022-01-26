@@ -2,8 +2,8 @@ package main
 
 import (
 	"bufio"
+	log "github.com/sirupsen/logrus"
 	"io"
-	"log"
 )
 
 func RecvChannel(rd io.Reader) <-chan string {
@@ -15,7 +15,7 @@ func RecvChannel(rd io.Reader) <-chan string {
 			var line = scanner.Text()
 			recvch <- line
 		}
-		log.Print("EOF")
+		log.Debug("EOF")
 	}()
 	return recvch
 }

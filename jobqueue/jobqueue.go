@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/juju/fslock"
 	"github.com/radovskyb/watcher"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"os"
 	"path"
 	"regexp"
@@ -49,7 +49,7 @@ func loadJob(jobPath string) (Job, error) {
 	job := Job{}
 	content, err := os.ReadFile(jobPath)
 	if err != nil {
-		log.Println("jobfile cannot be read")
+		log.Debugln("jobfile cannot be read")
 		return Job{}, err
 	}
 	jobName := path.Base(path.Dir(jobPath))
@@ -78,10 +78,10 @@ func (job Job) MoveJob(newState JobState) (Job, error) {
 		if err != nil {
 			fmt.Println("falied to unlock > " + err.Error())
 		}
-		log.Print("release the lock")
+		log.Debug("release the lock")
 	}()
 
-	log.Print("got the lock")
+	log.Debug("got the lock")
 
 	job.State = newState
 	err := os.Rename(jobOldPath, job.Path())
@@ -103,6 +103,7 @@ func StartJobQueue(jobQueueBase string) (<-chan Job, error) {
 	os.MkdirAll(path.Join(jobQueueBase, string(StateDone)),0755)
 	w.FilterOps(watcher.Move, watcher.Create, watcher.Write)
 
+
 	r := regexp.MustCompile("^job.txt$")
 	w.AddFilterHook(watcher.RegexFilterHook(r, false))
 	if err := w.AddRecursive(path.Join(jobQueueBase, string(StateReady))); err != nil {
@@ -116,12 +117,12 @@ func StartJobQueue(jobQueueBase string) (<-chan Job, error) {
 				fmt.Println(event) // Print the event's info.
 				job, err := loadJob(event.Path)
 				if err != nil {
-					log.Println(err)
+					log.Debugln(err)
 					continue
 				}
 				jobCh <- job
 			case err := <-w.Error:
-				log.Println(err)
+				log.Debugln(err)
 			case <-w.Closed:
 				return
 			}
