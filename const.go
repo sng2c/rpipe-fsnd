@@ -25,7 +25,7 @@ type FsndMsg struct {
 }
 
 func NewFsndMsgFrom(v0 *messages.Msg) (*FsndMsg, error) {
-	str := strings.TrimSpace(v0.Data)
+	str := strings.TrimSpace(string(v0.Data))
 	values, err := url.ParseQuery(str)
 	if err != nil {
 		return nil, err
@@ -41,12 +41,12 @@ func NewFsndMsgFrom(v0 *messages.Msg) (*FsndMsg, error) {
 	return &fsndMsg, nil
 }
 
-func (msg *FsndMsg) Encode() string {
+func (msg *FsndMsg) Encode() []byte {
 	marshalString, err := qstring.MarshalString(msg)
 	if err != nil {
-		return ""
+		return nil
 	}
-	msg.MsgV0.Data = marshalString
+	msg.MsgV0.Data = []byte(marshalString)
 	return msg.MsgV0.Marshal()
 }
 

@@ -57,9 +57,9 @@ func main() {
 	log.Debugln("WATCHER")
 
 	// RECEIVER
-	stdin := RecvChannel(os.Stdin)
+	stdin := messages.LineChannel(os.Stdin, 1024*512)
 	//cancel, cancelFunc := context.WithCancel(ctx)
-	prtCh := make(chan string)
+	prtCh := make(chan []byte)
 
 	ticker := time.Tick(1 * time.Second)
 
@@ -90,7 +90,7 @@ LoopMain:
 			if ok == false {
 				return
 			}
-			os.Stdout.Write([]byte(output + "\n"))
+			os.Stdout.Write(append(output ,'\n'))
 		case job, ok := <-jobCh:
 			if ok == false {
 				break LoopMain
