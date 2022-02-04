@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"fsnd/fsm"
 	"fsnd/jobqueue"
-	"fsnd/messages"
 	"fsnd/protocol"
 	"github.com/dyninc/qstring"
 	log "github.com/sirupsen/logrus"
+	rpipe_msgspec "github.com/sng2c/rpipe/msgspec"
 	"hash"
 	"io"
 	"math"
@@ -96,7 +96,7 @@ func (sess *SendSession) SessionKey() string {
 func (sess *SendSession) NewFsndMsg(event fsm.Event) *FsndMsg {
 	sess.LastSent = time.Now()
 	return &FsndMsg{
-		MsgV0: &messages.Msg{
+		MsgV0: &rpipe_msgspec. Msg{
 			To: sess.RecvAddr,
 		},
 		SrcType:   "SEND",

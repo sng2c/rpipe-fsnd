@@ -3,7 +3,8 @@ package main
 import (
 	"flag"
 	"fsnd/jobqueue"
-	"fsnd/messages"
+	rpipe_msgspec "github.com/sng2c/rpipe/msgspec"
+	rpipe_pipe "github.com/sng2c/rpipe/pipe"
 	easy "github.com/t-tomalak/logrus-easy-formatter"
 	"io"
 	"os"
@@ -57,7 +58,7 @@ func main() {
 	log.Debugln("WATCHER")
 
 	// RECEIVER
-	stdin := messages.LineChannel(os.Stdin, 1024*512)
+	stdin := rpipe_pipe.ReadLineChannel(os.Stdin, 1024*512)
 	//cancel, cancelFunc := context.WithCancel(ctx)
 	prtCh := make(chan []byte)
 
@@ -136,7 +137,7 @@ LoopMain:
 				break LoopMain
 			}
 			log.Debugf("[STDIN] %s", line)
-			v0, err := messages.NewMsgFromString(line)
+			v0, err := rpipe_msgspec.NewMsgFromBytes(line)
 
 			msg, err := NewFsndMsgFrom(v0)
 			if err != nil {
@@ -151,7 +152,7 @@ LoopMain:
 				if !ok { // 없으면 무시
 					log.Debugf("No session %s %s", v0.From+msg.SessionId, err)
 					failMsg := FsndMsg{
-						MsgV0: &messages.Msg{
+						MsgV0: &rpipe_msgspec.Msg{
 							To: v0.From,
 						},
 						SessionId: msg.SessionId,

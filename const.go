@@ -3,9 +3,9 @@ package main
 import (
 	"errors"
 	"fsnd/fsm"
-	"fsnd/messages"
 	"github.com/dyninc/qstring"
 	log "github.com/sirupsen/logrus"
+	rpipe_msgspec "github.com/sng2c/rpipe/msgspec"
 	"net/url"
 	"strings"
 )
@@ -13,8 +13,8 @@ import (
 var LastError error = errors.New("Last Error")
 
 type FsndMsg struct {
-	MsgV0     *messages.Msg `qstring:"-"`
-	SrcType   string    `qstring:"type"`
+	MsgV0     *rpipe_msgspec.Msg `qstring:"-"`
+	SrcType   string             `qstring:"type"`
 	SessionId string    `qstring:"sid,omitempty"`
 	Event     fsm.Event `qstring:"cmd,omitempty"`
 	Hash      string    `qstring:"hash,omitempty"`
@@ -24,7 +24,7 @@ type FsndMsg struct {
 	Origin    string    `qstring:"-"`
 }
 
-func NewFsndMsgFrom(v0 *messages.Msg) (*FsndMsg, error) {
+func NewFsndMsgFrom(v0 *rpipe_msgspec.Msg) (*FsndMsg, error) {
 	str := strings.TrimSpace(string(v0.Data))
 	values, err := url.ParseQuery(str)
 	if err != nil {
@@ -53,7 +53,7 @@ func (msg *FsndMsg) Encode() []byte {
 func (msg *FsndMsg) NewAck(event fsm.Event) *FsndMsg {
 	log.Debugln(msg.MsgV0.From)
 	return &FsndMsg{
-		MsgV0:     &messages.Msg{To: msg.MsgV0.From},
+		MsgV0:     &rpipe_msgspec.Msg{To: msg.MsgV0.From},
 		SessionId: msg.SessionId,
 		Event:     event,
 	}

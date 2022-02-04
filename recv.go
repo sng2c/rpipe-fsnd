@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"fsnd/fsm"
-	"fsnd/messages"
 	"fsnd/protocol"
 	log "github.com/sirupsen/logrus"
+	rpipe_msgspec "github.com/sng2c/rpipe/msgspec"
 	"hash"
 	"os"
 	"path"
@@ -48,7 +48,7 @@ func NewRecvSessionFrom(msg FsndMsg, downloadPath string) (*RecvSession, error) 
 func (sess *RecvSession) NewFsndMsg(event fsm.Event) *FsndMsg {
 	sess.LastSent = time.Now()
 	newMsg := &FsndMsg{
-		MsgV0: &messages.Msg{
+		MsgV0: &rpipe_msgspec.Msg{
 			To: sess.SenderAddr,
 		},
 		SrcType:   "RECV",
