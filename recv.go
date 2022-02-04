@@ -65,13 +65,13 @@ func (sess *RecvSession) SessionKey() string {
 	return sess.SenderAddr + sess.SessionId
 }
 func (sess *RecvSession) SessionPath() string {
-	return path.Join(sess.DownloadPath, sess.SessionId)
+	return sess.DownloadPath
 }
 func (sess *RecvSession) FilePath() string {
 	return path.Join(sess.SessionPath(), sess.FileName)
 }
 func (sess *RecvSession) JobPath() string {
-	return path.Join(sess.SessionPath(), "job.txt")
+	return path.Join(sess.SessionPath(), sess.FileName+".JOB")
 }
 func (sess *RecvSession) Handle(msg *FsndMsg) (newMsg *FsndMsg, _err error) {
 	{

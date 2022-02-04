@@ -15,13 +15,14 @@ var LastError error = errors.New("Last Error")
 type FsndMsg struct {
 	MsgV0     *rpipe_msgspec.Msg `qstring:"-"`
 	SrcType   string             `qstring:"type"`
-	SessionId string    `qstring:"sid,omitempty"`
-	Event     fsm.Event `qstring:"cmd,omitempty"`
-	Hash      string    `qstring:"hash,omitempty"`
-	FileName  string    `qstring:"file,omitempty"`
-	DataB64   string    `qstring:"data,omitempty"`
-	Length    int       `qstring:"len,omitempty"`
-	Origin    string    `qstring:"-"`
+	SessionId string             `qstring:"sid,omitempty"`
+	Event     fsm.Event          `qstring:"cmd,omitempty"`
+	Hash      string             `qstring:"hash,omitempty"`
+	FileName  string             `qstring:"file,omitempty"`
+	DataB64   string             `qstring:"data,omitempty"`
+	Length    int                `qstring:"len,omitempty"`
+	From      string             `qstring:"from,omitempty"`
+	Origin    string             `qstring:"-"`
 }
 
 func NewFsndMsgFrom(v0 *rpipe_msgspec.Msg) (*FsndMsg, error) {
@@ -33,6 +34,7 @@ func NewFsndMsgFrom(v0 *rpipe_msgspec.Msg) (*FsndMsg, error) {
 	fsndMsg := FsndMsg{
 		MsgV0: v0,
 	}
+	fsndMsg.From = v0.From
 	err = qstring.Unmarshal(values, &fsndMsg)
 	if err != nil {
 		return nil, err

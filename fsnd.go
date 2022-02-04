@@ -82,6 +82,7 @@ LoopMain:
 				if s.IsTimeout(now, TTL) {
 					log.Debugf("SendSession %s is timeout", s.SessionKey())
 					failMsg := s.NewFsndMsg("TIMEOUT")
+					_, _ = s.Job.MoveJob(jobqueue.StateFailed)
 					delete(sendSess, k)
 					log.Debugln(failMsg)
 					go func() { prtCh <- failMsg.Encode() }()

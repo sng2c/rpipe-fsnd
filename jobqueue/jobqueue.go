@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -35,37 +36,52 @@ func ToJobState(name string) (JobState, error) {
 }
 
 type Job struct {
-	BaseDir string
-	State   JobState
-	JobName string
-	Payload string
+	BaseDir  string
+	State    JobState
+	JobName  string
+	FileName string
+	Payload  []byte
 }
 
-func (job Job) Path() string {
+func (job *Job) FilePath() string {
+	return path.Join(job.BaseDir, string(job.State), job.FileName)
+}
+func (job *Job) JobPath() string {
 	return path.Join(job.BaseDir, string(job.State), job.JobName)
 }
-
-func loadJob(jobPath string) (Job, error) {
-	job := Job{}
+func NewJobFromJobPath(jobPath string) (*Job, error) {
+	job := &Job{}
 	content, err := os.ReadFile(jobPath)
 	if err != nil {
 		log.Debugln("jobfile cannot be read")
-		return Job{}, err
+		return nil, err
 	}
-	jobName := path.Base(path.Dir(jobPath))
-	state := path.Base(path.Dir(path.Dir(jobPath)))
-	baseDir := path.Dir(path.Dir(path.Dir(jobPath)))
-	job.JobName = jobName
+	state := path.Base(path.Dir(jobPath))
+	baseDir := path.Dir(path.Dir(jobPath))
+	job.JobName = path.Base(jobPath)
+	job.FileName = strings.TrimSuffix(job.JobName, ".JOB")
 	job.BaseDir = baseDir
 	if job.State, err = ToJobState(state); err != nil {
-		return job, err
+		return nil, err
 	}
-	job.Payload = string(content)
+	job.Payload = content
+
+	_, err = os.Stat(job.FilePath())
+	if err != nil {
+		return nil, err
+	}
+
 	return job, nil
 }
 
-func (job Job) MoveJob(newState JobState) (Job, error) {
-	jobOldPath := job.Path()
+func loadJob(jobPath string) (*Job, error) {
+	return NewJobFromJobPath(jobPath)
+}
+
+func (job *Job) MoveJob(newState JobState) (*Job, error) {
+	jobOldPath := path.Join(job.BaseDir, string(job.State), job.JobName)
+	fileOldPath := path.Join(job.BaseDir, string(job.State), job.FileName)
+
 	lock := fslock.New(path.Join(job.BaseDir, string(job.State)))
 	lockErr := lock.TryLock()
 	if lockErr != nil {
@@ -84,7 +100,11 @@ func (job Job) MoveJob(newState JobState) (Job, error) {
 	log.Debug("got the lock")
 
 	job.State = newState
-	err := os.Rename(jobOldPath, job.Path())
+	err := os.Rename(jobOldPath, job.JobPath())
+	if err != nil {
+		return job, err
+	}
+	err = os.Rename(fileOldPath, job.FilePath())
 	if err != nil {
 		return job, err
 	}
@@ -92,19 +112,18 @@ func (job Job) MoveJob(newState JobState) (Job, error) {
 	return job, nil
 }
 
-func StartJobQueue(jobQueueBase string) (<-chan Job, error) {
+func StartJobQueue(jobQueueBase string) (<-chan *Job, error) {
 	// SENDER
-	jobCh := make(chan Job)
+	jobCh := make(chan *Job)
 	w := watcher.New()
 	// Only notify rename and move events.
-	os.MkdirAll(path.Join(jobQueueBase, string(StateReady)),0755)
-	os.MkdirAll(path.Join(jobQueueBase, string(StateDoing)),0755)
-	os.MkdirAll(path.Join(jobQueueBase, string(StateFailed)),0755)
-	os.MkdirAll(path.Join(jobQueueBase, string(StateDone)),0755)
+	os.MkdirAll(path.Join(jobQueueBase, string(StateReady)), 0755)
+	os.MkdirAll(path.Join(jobQueueBase, string(StateDoing)), 0755)
+	os.MkdirAll(path.Join(jobQueueBase, string(StateFailed)), 0755)
+	os.MkdirAll(path.Join(jobQueueBase, string(StateDone)), 0755)
 	w.FilterOps(watcher.Move, watcher.Create, watcher.Write)
 
-
-	r := regexp.MustCompile("^job.txt$")
+	r := regexp.MustCompile("\\.JOB$")
 	w.AddFilterHook(watcher.RegexFilterHook(r, false))
 	if err := w.AddRecursive(path.Join(jobQueueBase, string(StateReady))); err != nil {
 		return nil, err
@@ -118,6 +137,7 @@ func StartJobQueue(jobQueueBase string) (<-chan Job, error) {
 				job, err := loadJob(event.Path)
 				if err != nil {
 					log.Debugln(err)
+
 					continue
 				}
 				jobCh <- job

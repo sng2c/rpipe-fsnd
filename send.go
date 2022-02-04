@@ -16,7 +16,6 @@ import (
 	"math"
 	"net/url"
 	"os"
-	"path"
 	"strings"
 	"time"
 )
@@ -30,17 +29,17 @@ type SendSession struct {
 	FilePath    string
 	ChunkLength int
 	HashObj     hash.Hash
-	Job         jobqueue.Job
+	Job         *jobqueue.Job
 	SessionId   string
 	Origin      string
 	RecvAddr    string `qstring:"addr,omitempty"`
-	FileName    string `qstring:"file,omitempty"`
+	FileName    string
 }
 
 const BUFSIZE = 4096
 
-func NewSendSessionFrom(job jobqueue.Job) (*SendSession, error) {
-	str := strings.TrimSpace(job.Payload)
+func NewSendSessionFrom(job *jobqueue.Job) (*SendSession, error) {
+	str := strings.TrimSpace(string(job.Payload))
 	values, err := url.ParseQuery(str)
 	if err != nil {
 		return nil, err
@@ -53,13 +52,17 @@ func NewSendSessionFrom(job jobqueue.Job) (*SendSession, error) {
 		return nil, err
 	}
 
-	if sess.RecvAddr == "" || sess.FileName == "" {
+	if sess.RecvAddr == "" {
 		return nil, errors.New("Invalid payload " + str)
 	}
+
 	sess.LastSent = time.Now()
 	sess.Origin = str
 	sess.SessionId = job.JobName
-	sess.FilePath = path.Join(job.Path(), sess.FileName)
+	sess.FilePath = job.FilePath()
+	sess.FileName = job.FileName
+
+
 
 	fi, err := os.Stat(sess.FilePath)
 	if err != nil {
