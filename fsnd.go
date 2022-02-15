@@ -13,8 +13,9 @@ import (
 import (
 	log "github.com/sirupsen/logrus"
 )
+
 // session 을 만들것
-const VERSION = "0.1"
+const VERSION = "0.1.1"
 
 var recvSess = make(map[string]*RecvSession)
 var sendSess = make(map[string]*SendSession)
@@ -58,7 +59,7 @@ func main() {
 	log.Debugln("WATCHER")
 
 	// RECEIVER
-	stdin := rpipe_pipe.ReadLineChannel(os.Stdin, 1024*512)
+	stdin := rpipe_pipe.ReadLineChannel(os.Stdin)
 	//cancel, cancelFunc := context.WithCancel(ctx)
 	prtCh := make(chan []byte)
 
@@ -92,7 +93,7 @@ LoopMain:
 			if ok == false {
 				return
 			}
-			os.Stdout.Write(append(output ,'\n'))
+			os.Stdout.Write(append(output, '\n'))
 		case job, ok := <-jobCh:
 			if ok == false {
 				break LoopMain
