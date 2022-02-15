@@ -11,6 +11,7 @@ func init() {
 }
 
 func NewRecvProtocol(id string, chunks int) (fsm.Instance, fsm.State) {
+	id = strings.ReplaceAll(id, ".", "_")
 	id = "." + id + "."
 	recv := fsm.NewFsm()
 	recv.Append(fsm.State("READY"+id), fsm.Event("OPEN"+id), fsm.State("OPENED"+id))
@@ -26,6 +27,7 @@ func NewRecvProtocol(id string, chunks int) (fsm.Instance, fsm.State) {
 }
 
 func NewSendProtocol(id string, chunks int) (fsm.Instance, fsm.State) {
+	id = strings.ReplaceAll(id, ".", "_")
 	id = "." + id + "."
 	send := fsm.NewFsm()
 	send.Append(fsm.State("READY"), fsm.Event("START"), fsm.State("OPEN"+id))

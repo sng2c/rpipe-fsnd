@@ -50,7 +50,7 @@ func main() {
 	log.Printf("  download  : %s\n", downloadPath)
 	log.Printf("  upload    : %s\n", uploadPath)
 	log.Printf("  verbose   : %t\n", verbose)
-	log.SetFormatter(&log.JSONFormatter{})
+	log.SetFormatter(&log.TextFormatter{ForceColors: true})
 
 	jobCh, err := jobqueue.StartJobQueue(uploadPath)
 	if err != nil {

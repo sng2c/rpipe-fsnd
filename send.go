@@ -12,7 +12,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	rpipe_msgspec "github.com/sng2c/rpipe/msgspec"
 	"hash"
-	"io"
 	"math"
 	"net/url"
 	"os"
@@ -36,7 +35,7 @@ type SendSession struct {
 	FileName    string
 }
 
-const BUFSIZE = 4096
+const BUFSIZE = 1024
 
 func NewSendSessionFrom(job *jobqueue.Job) (*SendSession, error) {
 	str := strings.TrimSpace(string(job.Payload))
@@ -61,8 +60,6 @@ func NewSendSessionFrom(job *jobqueue.Job) (*SendSession, error) {
 	sess.SessionId = job.JobName
 	sess.FilePath = job.FilePath()
 	sess.FileName = job.FileName
-
-
 
 	fi, err := os.Stat(sess.FilePath)
 	if err != nil {
@@ -99,13 +96,13 @@ func (sess *SendSession) SessionKey() string {
 func (sess *SendSession) NewFsndMsg(event fsm.Event) *FsndMsg {
 	sess.LastSent = time.Now()
 	return &FsndMsg{
-		MsgV0: &rpipe_msgspec. Msg{
+		MsgV0: &rpipe_msgspec.Msg{
 			To: sess.RecvAddr,
 		},
 		SrcType:   "SEND",
 		SessionId: sess.SessionId,
 		Event:     event,
-		Length: sess.ChunkLength,
+		Length:    sess.ChunkLength,
 	}
 }
 func (sess *SendSession) Handle(ackMsg *FsndMsg) (
@@ -123,6 +120,7 @@ func (sess *SendSession) Handle(ackMsg *FsndMsg) (
 		newMsg = sess.NewFsndMsg(fsm.Event(sess.SendProto.State))
 
 		cmd, _, page := protocol.ParseEventState(string(sess.SendProto.State))
+		log.Debugf("State %s -> Cmd: %s , Page: %d", sess.SendProto.State, cmd, page)
 		if cmd == "OPEN" {
 			sess.FileObj, err = os.Open(sess.FilePath)
 			sess.FileHash = readFileHash(sess.FilePath)
@@ -133,10 +131,14 @@ func (sess *SendSession) Handle(ackMsg *FsndMsg) (
 			buf := make([]byte, BUFSIZE)
 			offset := int64(page * BUFSIZE)
 			log.Debugf("page %d, OFFSET %d ", page, offset)
-			sess.FileObj.Seek(offset, io.SeekStart)
+			//seek, err := sess.FileObj.Seek(offset, io.SeekStart)
+			//if err != nil {
+			//	return nil, err
+			//}
 
 			var hasRead int
-			hasRead, _ = sess.FileObj.Read(buf)
+			hasRead, _ = sess.FileObj.ReadAt(buf, offset)
+			log.Debugf("%s HasRead : %d", sess.FilePath, hasRead)
 			buf = buf[:hasRead]
 			newMsg.Event = fsm.Event(sess.SendProto.State)
 			newMsg.DataB64 = base64.StdEncoding.EncodeToString(buf)
