@@ -38,6 +38,7 @@ type SendSession struct {
 const BUFSIZE = 1024
 
 func NewSendSessionFrom(job *jobqueue.Job) (*SendSession, error) {
+	log.Debugln(1)
 	str := strings.TrimSpace(string(job.Payload))
 	values, err := url.ParseQuery(str)
 	if err != nil {
@@ -46,6 +47,7 @@ func NewSendSessionFrom(job *jobqueue.Job) (*SendSession, error) {
 	sess := SendSession{}
 	sess.Job = job
 
+	log.Debugln(2)
 	err = qstring.Unmarshal(values, &sess)
 	if err != nil {
 		return nil, err
@@ -61,6 +63,7 @@ func NewSendSessionFrom(job *jobqueue.Job) (*SendSession, error) {
 	sess.FilePath = job.FilePath()
 	sess.FileName = job.FileName
 
+	log.Debugln(3)
 	fi, err := os.Stat(sess.FilePath)
 	if err != nil {
 		return nil, err
@@ -73,7 +76,8 @@ func NewSendSessionFrom(job *jobqueue.Job) (*SendSession, error) {
 	sess.LastState = lastState
 	sess.ChunkLength = int(chunkLength)
 
-	sess.SendProto.Fsm.LogDump()
+	log.Debugln(4)
+	//sess.SendProto.Fsm.LogDump()
 	return &sess, nil
 }
 func (sess *SendSession) IsTimeout(now time.Time, ttl float64) bool {
@@ -96,8 +100,8 @@ func (sess *SendSession) SessionKey() string {
 func (sess *SendSession) NewFsndMsg(event fsm.Event) *FsndMsg {
 	sess.LastSent = time.Now()
 	return &FsndMsg{
-		MsgV0: &rpipe_msgspec.Msg{
-			To: sess.RecvAddr,
+		MsgV0: &rpipe_msgspec.ApplicationMsg{
+			Name: sess.RecvAddr,
 		},
 		SrcType:   "SEND",
 		SessionId: sess.SessionId,
@@ -109,7 +113,7 @@ func (sess *SendSession) Handle(ackMsg *FsndMsg) (
 	newMsg *FsndMsg,
 	err error,
 ) {
-	log.Debugln(sess)
+	//log.Debugln(sess.Job)
 	log.Debugf("SendSession %s to %s with %s", sess.FileName, sess.RecvAddr, sess.SessionId)
 	if ok := sess.SendProto.Emit(ackMsg.Event); ok {
 

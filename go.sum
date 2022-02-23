@@ -47,8 +47,8 @@ github.com/radovskyb/watcher v1.0.7/go.mod h1:78okwvY5wPdzcb1UYnip1pvrZNIVEIh/Cm
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
 github.com/sirupsen/logrus v1.8.1 h1:dJKuHgqk1NNQlqoA6BTlM1Wf9DOH3NBjQyu0h9+AZZE=
 github.com/sirupsen/logrus v1.8.1/go.mod h1:yWOB1SBYBC5VeMP7gHvWumXLIWorT60ONWic61uBYv0=
-github.com/sng2c/rpipe v0.1.1 h1:IZBLfEL5LZ2ZzHxOR6y8y2nq+cLqXPBC1VVfko0CErc=
-github.com/sng2c/rpipe v0.1.1/go.mod h1:9ohMoT59SMM6TzxK7Isfyxqm9MiDhvljr9IixPNSvUw=
+github.com/sng2c/rpipe v0.2.3 h1:RCNcmFbtx3n65HoGVbvj9tx2BFotyfs7xTYYr8iZhjE=
+github.com/sng2c/rpipe v0.2.3/go.mod h1:9ohMoT59SMM6TzxK7Isfyxqm9MiDhvljr9IixPNSvUw=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.1.1/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.2.2/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXfy6kDkUVs=

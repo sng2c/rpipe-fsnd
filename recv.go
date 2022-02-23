@@ -38,7 +38,7 @@ func NewRecvSessionFrom(msg FsndMsg, downloadPath string) (*RecvSession, error) 
 		DownloadPath: downloadPath,
 		HashObj:      md5.New(),
 		SessionId:    msg.SessionId,
-		SenderAddr:   msg.MsgV0.From,
+		SenderAddr:   msg.MsgV0.Name,
 		FileName:     msg.FileName,
 		Hash:         msg.Hash,
 	}
@@ -48,8 +48,8 @@ func NewRecvSessionFrom(msg FsndMsg, downloadPath string) (*RecvSession, error) 
 func (sess *RecvSession) NewFsndMsg(event fsm.Event) *FsndMsg {
 	sess.LastSent = time.Now()
 	newMsg := &FsndMsg{
-		MsgV0: &rpipe_msgspec.Msg{
-			To: sess.SenderAddr,
+		MsgV0: &rpipe_msgspec.ApplicationMsg{
+			Name: sess.SenderAddr,
 		},
 		SrcType:   "RECV",
 		SessionId: sess.SessionId,
@@ -100,7 +100,7 @@ func (sess *RecvSession) Handle(msg *FsndMsg) (newMsg *FsndMsg, _err error) {
 			log.Debugf("Open JOB %s", sess.FilePath())
 			sess.FileObj, _ = os.Create(sess.FilePath())
 		} else if cmd == "WRITTEN" {
-			log.Debugf("Write File %s" +
+			log.Debugf("Write File %s"+
 				"", msg.DataB64)
 			decoded, err := base64.StdEncoding.DecodeString(msg.DataB64)
 			if err != nil {

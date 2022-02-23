@@ -2,7 +2,6 @@ package jobqueue
 
 import (
 	"errors"
-	"fmt"
 	"github.com/juju/fslock"
 	"github.com/radovskyb/watcher"
 	log "github.com/sirupsen/logrus"
@@ -85,14 +84,14 @@ func (job *Job) MoveJob(newState JobState) (*Job, error) {
 	lock := fslock.New(path.Join(job.BaseDir, string(job.State)))
 	lockErr := lock.TryLock()
 	if lockErr != nil {
-		fmt.Println("falied to acquire lock > " + lockErr.Error())
+		log.Debugln("falied to acquire lock > " + lockErr.Error())
 		return job, lockErr
 	}
 	defer func() {
 		// release the lock
 		err := lock.Unlock()
 		if err != nil {
-			fmt.Println("falied to unlock > " + err.Error())
+			log.Debugln("falied to unlock > " + err.Error())
 		}
 		log.Debug("release the lock")
 	}()
@@ -133,7 +132,7 @@ func StartJobQueue(jobQueueBase string) (<-chan *Job, error) {
 		for {
 			select {
 			case event := <-w.Event:
-				fmt.Println(event) // Print the event's info.
+				log.Debugln(event) // Print the event's info.
 				job, err := loadJob(event.Path)
 				if err != nil {
 					log.Debugln(err)

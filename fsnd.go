@@ -95,6 +95,7 @@ LoopMain:
 			}
 			os.Stdout.Write(append(output, '\n'))
 		case job, ok := <-jobCh:
+			log.Debugln("<-jobch")
 			if ok == false {
 				break LoopMain
 			}
@@ -107,14 +108,16 @@ LoopMain:
 			log.Debugln(job)
 			// process here
 			sess, err := NewSendSessionFrom(job)
-			if err != nil {
-				log.Debug(err)
-				_, err := job.MoveJob(jobqueue.StateFailed)
-				if err != nil {
-					log.Debug(err)
-				}
-				continue
-			}
+			log.Debugln("NewSendSessionFrom")
+			//if err != nil {
+			//	log.Warningln(err)
+			//	_, err := job.MoveJob(jobqueue.StateFailed)
+			//	if err != nil {
+			//		log.Warningln(err)
+			//	}
+			//	continue
+			//}
+			log.Debugln("begin session", sess)
 			sendSess[sess.SessionKey()] = sess
 			sendMsg, err := sess.Handle(sess.NewFsndMsg("START"))
 
@@ -135,11 +138,17 @@ LoopMain:
 			}
 
 		case line, ok := <-stdin:
+			log.Debugln("<-stdin", line)
 			if ok == false {
 				break LoopMain
 			}
+
 			log.Debugf("[STDIN] %s", line)
-			v0, err := rpipe_msgspec.NewMsgFromBytes(line)
+			v0, err := rpipe_msgspec.NewApplicationMsg(line)
+			if err != nil {
+				log.Debugln(err)
+				continue
+			}
 
 			msg, err := NewFsndMsgFrom(v0)
 			if err != nil {
@@ -149,13 +158,13 @@ LoopMain:
 
 			if msg.SrcType == "RECV" {
 				var sess *SendSession
-				sess, ok = sendSess[v0.From+msg.SessionId]
+				sess, ok = sendSess[v0.Name+msg.SessionId]
 
 				if !ok { // 없으면 무시
-					log.Debugf("No session %s %s", v0.From+msg.SessionId, err)
+					log.Debugf("No session %s %s", v0.Name+msg.SessionId, err)
 					failMsg := FsndMsg{
-						MsgV0: &rpipe_msgspec.Msg{
-							To: v0.From,
+						MsgV0: &rpipe_msgspec.ApplicationMsg{
+							Name: v0.Name,
 						},
 						SessionId: msg.SessionId,
 						Event:     "NO_SESSION_FAIL",
@@ -182,7 +191,7 @@ LoopMain:
 				}
 			} else {
 				var sess *RecvSession
-				sess, ok = recvSess[v0.From+msg.SessionId]
+				sess, ok = recvSess[v0.Name+msg.SessionId]
 
 				if !ok {
 					sess, err = NewRecvSessionFrom(*msg, downloadPath)
