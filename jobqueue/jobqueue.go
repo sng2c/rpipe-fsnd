@@ -2,7 +2,6 @@ package jobqueue
 
 import (
 	"errors"
-	"github.com/juju/fslock"
 	"github.com/radovskyb/watcher"
 	log "github.com/sirupsen/logrus"
 	"os"
@@ -81,18 +80,18 @@ func (job *Job) MoveJob(newState JobState) (*Job, error) {
 	jobOldPath := path.Join(job.BaseDir, string(job.State), job.JobName)
 	fileOldPath := path.Join(job.BaseDir, string(job.State), job.FileName)
 
-	lock := fslock.New(path.Join(job.BaseDir, string(job.State)))
-	lockErr := lock.TryLock()
-	if lockErr != nil {
-		log.Debugln("falied to acquire lock > " + lockErr.Error())
-		return job, lockErr
-	}
+	//lock := fslock.New(path.Join(job.BaseDir, string(job.State)))
+	//lockErr := lock.TryLock()
+	//if lockErr != nil {
+	//	log.Debugln("falied to acquire lock > " + lockErr.Error())
+	//	return job, lockErr
+	//}
 	defer func() {
 		// release the lock
-		err := lock.Unlock()
-		if err != nil {
-			log.Debugln("falied to unlock > " + err.Error())
-		}
+		//err := lock.Unlock()
+		//if err != nil {
+		//	log.Debugln("falied to unlock > " + err.Error())
+		//}
 		log.Debug("release the lock")
 	}()
 

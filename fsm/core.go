@@ -42,16 +42,15 @@ func (m Fsm) NewInstance(init State) Instance {
 
 func (inst *Instance) Emit(event Event) bool {
 
-
 	newState, ok := inst.Fsm[inst.State][event]
 	if !ok {
 		return false
 	}
 
 	// Lock
-	inst.mu.Lock()
+	//inst.mu.Lock()
 	inst.State = newState
 	// Unlock
-	inst.mu.Unlock()
+	//inst.mu.Unlock()
 	return true
 }
