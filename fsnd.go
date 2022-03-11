@@ -15,7 +15,7 @@ import (
 )
 
 // session 을 만들것
-const VERSION = "0.1.3"
+const VERSION = "0.1.4"
 
 var recvSess = make(map[string]*RecvSession)
 var sendSess = make(map[string]*SendSession)
