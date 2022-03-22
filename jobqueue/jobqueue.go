@@ -115,10 +115,10 @@ func StartJobQueue(jobQueueBase string) (<-chan *Job, error) {
 	jobCh := make(chan *Job)
 	w := watcher.New()
 	// Only notify rename and move events.
-	os.MkdirAll(path.Join(jobQueueBase, string(StateReady)), 0755)
-	os.MkdirAll(path.Join(jobQueueBase, string(StateDoing)), 0755)
-	os.MkdirAll(path.Join(jobQueueBase, string(StateFailed)), 0755)
-	os.MkdirAll(path.Join(jobQueueBase, string(StateDone)), 0755)
+	os.MkdirAll(path.Join(jobQueueBase, string(StateReady)), 0777)
+	os.MkdirAll(path.Join(jobQueueBase, string(StateDoing)), 0777)
+	os.MkdirAll(path.Join(jobQueueBase, string(StateFailed)), 0777)
+	os.MkdirAll(path.Join(jobQueueBase, string(StateDone)), 0777)
 	w.FilterOps(watcher.Move, watcher.Create, watcher.Write)
 
 	r := regexp.MustCompile("\\.JOB$")
