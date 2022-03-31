@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"fsnd/fsm"
+	"fsnd/jobqueue"
 	"fsnd/protocol"
 	log "github.com/sirupsen/logrus"
 	rpipe_msgspec "github.com/sng2c/rpipe/msgspec"
@@ -76,7 +77,7 @@ func (sess *RecvSession) JobPath() string {
 func (sess *RecvSession) Handle(msg *FsndMsg) (newMsg *FsndMsg, _err error) {
 	{
 		log.Debugf("Mkdir Session %s", sess.SessionPath())
-		err := os.MkdirAll(sess.SessionPath(), 0755)
+		err := jobqueue.MkdirAll(sess.SessionPath(), 0777)
 		if err != nil {
 			_err = err
 			log.Warningln(err)

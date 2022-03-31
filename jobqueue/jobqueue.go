@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/radovskyb/watcher"
 	log "github.com/sirupsen/logrus"
+	"io/fs"
 	"os"
 	"path"
 	"regexp"
@@ -109,16 +110,26 @@ func (job *Job) MoveJob(newState JobState) (*Job, error) {
 
 	return job, nil
 }
-
+func MkdirAll(p string, perm fs.FileMode) error {
+	err := os.MkdirAll(p, perm)
+	if err != nil {
+		return err
+	}
+	err = os.Chmod(p, perm)
+	if err != nil {
+		return err
+	}
+	return nil
+}
 func StartJobQueue(jobQueueBase string) (<-chan *Job, error) {
 	// SENDER
 	jobCh := make(chan *Job)
 	w := watcher.New()
 	// Only notify rename and move events.
-	os.MkdirAll(path.Join(jobQueueBase, string(StateReady)), 0777)
-	os.MkdirAll(path.Join(jobQueueBase, string(StateDoing)), 0777)
-	os.MkdirAll(path.Join(jobQueueBase, string(StateFailed)), 0777)
-	os.MkdirAll(path.Join(jobQueueBase, string(StateDone)), 0777)
+	MkdirAll(path.Join(jobQueueBase, string(StateReady)), 0777)
+	MkdirAll(path.Join(jobQueueBase, string(StateDoing)), 0777)
+	MkdirAll(path.Join(jobQueueBase, string(StateFailed)), 0777)
+	MkdirAll(path.Join(jobQueueBase, string(StateDone)), 0777)
 	w.FilterOps(watcher.Move, watcher.Create, watcher.Write)
 
 	r := regexp.MustCompile("\\.JOB$")
